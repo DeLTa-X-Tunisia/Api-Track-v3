@@ -303,6 +303,10 @@ router.delete('/logs', isAdmin, async (req, res) => {
       VALUES ($1, 'admin_action', 'success', $2)
     `, [adminId, `Suppression de ${deletedCount} logs`]);
     
+    // Émettre l'événement socket pour mise à jour temps réel
+    const io = getIO();
+    io.emit('supervision:logs-deleted', { deletedCount, adminId });
+    
     res.json({ 
       success: true, 
       deletedCount,
@@ -330,6 +334,10 @@ router.delete('/logs/:logId', isAdmin, async (req, res) => {
     }
     
     console.log(`🗑️ [ADMIN #${adminId}] Suppression du log #${logId}`);
+    
+    // Émettre l'événement socket pour mise à jour temps réel
+    const io = getIO();
+    io.emit('supervision:log-deleted', { logId, adminId });
     
     res.json({ success: true, message: 'Log supprimé' });
   } catch (error) {

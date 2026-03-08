@@ -135,6 +135,13 @@ body {
 .mobile-overlay {
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* RTL Support */
@@ -284,4 +291,130 @@ body {
 
 .animate-slide-up {
   animation: slide-up 0.3s ease-out;
+}
+
+/* ========================================
+   SIDEBAR ANIMATIONS & STYLES
+   Modern flat/material design inspired
+   ======================================== */
+
+/* Sidebar item entrance animation */
+@keyframes sidebar-item-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* RTL support for sidebar animation */
+[dir="rtl"] .sidebar-item {
+  animation: sidebar-item-enter-rtl 0.3s ease-out;
+}
+
+@keyframes sidebar-item-enter-rtl {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.sidebar-item {
+  animation: sidebar-item-enter 0.3s ease-out;
+  animation-fill-mode: both;
+}
+
+/* Staggered animation for menu items */
+.sidebar-item:nth-child(1) { animation-delay: 0ms; }
+.sidebar-item:nth-child(2) { animation-delay: 30ms; }
+.sidebar-item:nth-child(3) { animation-delay: 60ms; }
+.sidebar-item:nth-child(4) { animation-delay: 90ms; }
+.sidebar-item:nth-child(5) { animation-delay: 120ms; }
+.sidebar-item:nth-child(6) { animation-delay: 150ms; }
+.sidebar-item:nth-child(7) { animation-delay: 180ms; }
+.sidebar-item:nth-child(8) { animation-delay: 210ms; }
+
+/* Icon pulse animation on active */
+@keyframes icon-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* Shimmer effect for active items */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Custom scrollbar for sidebar */
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Firefox scrollbar */
+.sidebar-nav {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* Hover glow effect */
+.sidebar-item a:hover {
+  box-shadow: 0 4px 12px -2px currentColor;
+}
+
+/* Active item indicator animation */
+@keyframes active-indicator {
+  0% {
+    height: 0;
+    opacity: 0;
+  }
+  100% {
+    height: 1.5rem;
+    opacity: 1;
+  }
+}
+
+/* Mobile responsive enhancements */
+@media (max-width: 1024px) {
+  .sidebar-item a {
+    padding: 0.75rem 1rem;
+  }
+  
+  .sidebar-nav {
+    padding: 1rem 0.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .sidebar-item a {
+    padding: 0.875rem 1rem;
+  }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -167,36 +167,65 @@ export default function SupervisionPage() {
   // Real-time updates via Socket.IO
   const { subscribe, isConnected: socketConnected } = useSocket();
   
+  // Use refs to avoid recreating socket listeners when functions change
+  const fetchFunctionsRef = useRef({ fetchLogs, fetchConnectedUsers, fetchStats });
+  const paginationRef = useRef(pagination);
+  
+  // Keep refs updated
   useEffect(() => {
-    if (!isAdmin) return;
+    fetchFunctionsRef.current = { fetchLogs, fetchConnectedUsers, fetchStats };
+    paginationRef.current = pagination;
+  }, [fetchLogs, fetchConnectedUsers, fetchStats, pagination]);
+  
+  // Socket listeners - only recreate when socket connection status changes
+  useEffect(() => {
+    if (!isAdmin || !socketConnected) return;
+    
+    console.log('🔌 Setting up supervision socket listeners...');
     
     // Listen for new user connections
     const unsubConnect = subscribe('supervision:user-connected', (data) => {
       console.log('🟢 User connected:', data);
-      fetchConnectedUsers();
-      fetchStats();
+      fetchFunctionsRef.current.fetchConnectedUsers();
+      fetchFunctionsRef.current.fetchStats();
     });
     
     // Listen for user disconnections
     const unsubDisconnect = subscribe('supervision:user-disconnected', (data) => {
       console.log('🔴 User disconnected:', data);
-      fetchConnectedUsers();
-      fetchStats();
+      fetchFunctionsRef.current.fetchConnectedUsers();
+      fetchFunctionsRef.current.fetchStats();
     });
     
     // Listen for forced logouts
     const unsubForceLogout = subscribe('supervision:force-logout', (data) => {
       console.log('⚠️ User force logged out:', data);
-      fetchConnectedUsers();
-      fetchStats();
+      fetchFunctionsRef.current.fetchConnectedUsers();
+      fetchFunctionsRef.current.fetchStats();
+    });
+    
+    // Listen for logs deletion (bulk)
+    const unsubLogsDeleted = subscribe('supervision:logs-deleted', (data) => {
+      console.log('🗑️ Logs deleted:', data);
+      fetchFunctionsRef.current.fetchLogs(1);
+      fetchFunctionsRef.current.fetchStats();
+    });
+    
+    // Listen for single log deletion
+    const unsubLogDeleted = subscribe('supervision:log-deleted', (data) => {
+      console.log('🗑️ Single log deleted:', data);
+      fetchFunctionsRef.current.fetchLogs(paginationRef.current.page);
     });
     
     return () => {
+      console.log('🔌 Cleaning up supervision socket listeners...');
       unsubConnect?.();
       unsubDisconnect?.();
       unsubForceLogout?.();
+      unsubLogsDeleted?.();
+      unsubLogDeleted?.();
     };
-  }, [isAdmin, subscribe, fetchConnectedUsers, fetchStats]);
+  }, [isAdmin, socketConnected, subscribe]);
   
   // Force logout user
   const handleForceLogout = async (userId, userName) => {
@@ -320,11 +349,21 @@ export default function SupervisionPage() {
       case 'admin':
         return { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400', dot: 'bg-blue-500' };
       case 'chef_equipe':
+      case 'responsable':
         return { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400', dot: 'bg-purple-500' };
       case 'operateur':
+      case 'technicien':
         return { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-600 dark:text-green-400', dot: 'bg-green-500' };
       case 'controleur':
+      case 'inspecteur':
         return { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400', dot: 'bg-orange-500' };
+      case 'superviseur':
+      case 'superviseur_limite':
+      case 'gestionnaire':
+        return { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400', dot: 'bg-indigo-500' };
+      case 'agent':
+      case 'viewer':
+        return { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-400', dot: 'bg-slate-500' };
       default:
         return { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-600 dark:text-gray-400', dot: 'bg-gray-500' };
     }

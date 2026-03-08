@@ -95,7 +95,13 @@
     "operateur": "Operator",
     "controleur": "Controller",
     "superviseur": "Supervisor",
-    "technicien": "Technician"
+    "superviseur_limite": "Limited Supervisor",
+    "technicien": "Technician",
+    "gestionnaire": "Manager",
+    "inspecteur": "Inspector",
+    "responsable": "Manager",
+    "agent": "Agent",
+    "viewer": "Viewer"
   },
   "navigation": {
     "dashboard": "Dashboard",

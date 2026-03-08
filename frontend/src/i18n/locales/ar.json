@@ -95,7 +95,13 @@
     "operateur": "مشغل",
     "controleur": "مراقب",
     "superviseur": "مشرف",
-    "technicien": "فني"
+    "superviseur_limite": "مشرف محدود",
+    "technicien": "فني",
+    "gestionnaire": "مدير",
+    "inspecteur": "مفتش",
+    "responsable": "مسؤول",
+    "agent": "وكيل",
+    "viewer": "مشاهد"
   },
   "navigation": {
     "dashboard": "لوحة التحكم",

@@ -95,7 +95,13 @@
     "operateur": "Operatore",
     "controleur": "Controllore",
     "superviseur": "Supervisore",
-    "technicien": "Tecnico"
+    "superviseur_limite": "Supervisore Limitato",
+    "technicien": "Tecnico",
+    "gestionnaire": "Gestore",
+    "inspecteur": "Ispettore",
+    "responsable": "Responsabile",
+    "agent": "Agente",
+    "viewer": "Visualizzatore"
   },
   "navigation": {
     "dashboard": "Dashboard",

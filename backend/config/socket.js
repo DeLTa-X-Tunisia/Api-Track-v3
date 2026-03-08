@@ -6,8 +6,17 @@ let io = null;
 // Track connected users in memory (for real-time updates)
 const connectedUsers = new Map();
 
+// Socket metrics
+let socketMetrics = {
+  totalConnections: 0,
+  activeConnections: 0,
+  peakConnections: 0,
+  messagesPerSecond: 0,
+  lastUpdated: new Date()
+};
+
 /**
- * Initialize Socket.IO server
+ * Initialize Socket.IO server with optimized settings for 50+ concurrent users
  * @param {http.Server} httpServer - HTTP server instance
  */
 const initializeSocket = (httpServer) => {
@@ -17,14 +26,42 @@ const initializeSocket = (httpServer) => {
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
       credentials: true,
     },
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    
+    // Connection settings optimized for high concurrency
+    pingTimeout: 60000,                                    // 60s before considering disconnected
+    pingInterval: 25000,                                   // Heartbeat every 25s
+    connectTimeout: 45000,                                 // 45s to establish connection
+    
+    // Performance optimizations
+    transports: ['websocket', 'polling'],                 // Prefer WebSocket
+    allowUpgrades: true,                                   // Allow transport upgrades
+    upgradeTimeout: 10000,                                 // 10s for transport upgrade
+    
+    // Capacity settings
+    maxHttpBufferSize: 1e6,                               // 1MB max message size
+    perMessageDeflate: {                                   // Enable compression
+      threshold: 1024,                                     // Compress messages > 1KB
+      zlibDeflateOptions: { level: 6 },                   // Compression level (1-9)
+      zlibInflateOptions: { chunkSize: 10 * 1024 },
+    },
+    
+    // Connection limits (adjust based on server capacity)
+    path: '/socket.io/',
+    serveClient: false,                                    // Don't serve socket.io client
+    cookie: false,                                         // Disable cookies for better performance
   });
+  
+  // Increase max listeners to handle many connections
+  io.setMaxListeners(100);
 
   // Connection handler
   io.on('connection', (socket) => {
     const clientId = socket.id;
-    console.log(`🔌 Socket connected [${clientId}]`);
+    socketMetrics.totalConnections++;
+    socketMetrics.activeConnections = io.engine.clientsCount;
+    socketMetrics.peakConnections = Math.max(socketMetrics.peakConnections, socketMetrics.activeConnections);
+    
+    console.log(`🔌 Socket connected [${clientId}] (Active: ${socketMetrics.activeConnections}, Peak: ${socketMetrics.peakConnections})`);
 
     // Handle user authentication
     socket.on('user:authenticate', async (userData) => {
@@ -107,7 +144,8 @@ const initializeSocket = (httpServer) => {
 
     // Handle disconnection
     socket.on('disconnect', async (reason) => {
-      console.log(`❌ Socket disconnected [${clientId}] reason: ${reason}`);
+      socketMetrics.activeConnections = Math.max(0, (io?.engine?.clientsCount || 0));
+      console.log(`❌ Socket disconnected [${clientId}] reason: ${reason} (Active: ${socketMetrics.activeConnections})`);
       
       const user = connectedUsers.get(clientId);
       if (user) {
@@ -252,6 +290,21 @@ const SOCKET_EVENTS = {
   DATA_REFRESH: 'data:refresh',
 };
 
+/**
+ * Get current socket metrics
+ * @returns {Object} Socket metrics
+ */
+const getSocketMetrics = () => {
+  if (io) {
+    socketMetrics.activeConnections = io.engine.clientsCount;
+    socketMetrics.lastUpdated = new Date();
+  }
+  return {
+    ...socketMetrics,
+    connectedUsers: connectedUsers.size
+  };
+};
+
 module.exports = {
   initializeSocket,
   getIO,
@@ -259,5 +312,6 @@ module.exports = {
   emitToRoom,
   getConnectedUsers,
   forceDisconnect,
+  getSocketMetrics,
   SOCKET_EVENTS,
 };
