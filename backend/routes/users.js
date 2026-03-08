@@ -299,6 +299,8 @@ router.delete('/:id', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { code_acces } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress;
+    const userAgent = req.headers['user-agent'];
     
     // Validation
     if (!code_acces || code_acces.length !== 6) {
@@ -312,6 +314,12 @@ router.post('/login', async (req, res) => {
     );
     
     if (result.rows.length === 0) {
+      // Log failed attempt
+      await query(`
+        INSERT INTO connection_logs (user_id, action, ip_address, user_agent, status, failure_reason)
+        VALUES (NULL, 'login', $1, $2, 'failed', 'Code d''accès incorrect')
+      `, [ipAddress, userAgent]);
+      
       return res.status(401).json({ error: 'Code d\'accès incorrect' });
     }
     
@@ -319,8 +327,20 @@ router.post('/login', async (req, res) => {
     
     // Check if user is active
     if (!user.actif) {
+      // Log blocked attempt
+      await query(`
+        INSERT INTO connection_logs (user_id, action, ip_address, user_agent, status, failure_reason)
+        VALUES ($1, 'login', $2, $3, 'blocked', 'Compte désactivé')
+      `, [user.id, ipAddress, userAgent]);
+      
       return res.status(403).json({ error: 'Ce compte est désactivé. Contactez un administrateur.' });
     }
+    
+    // Log successful login
+    await query(`
+      INSERT INTO connection_logs (user_id, action, ip_address, user_agent, status)
+      VALUES ($1, 'login', $2, $3, 'success')
+    `, [user.id, ipAddress, userAgent]);
     
     res.json({
       success: true,
@@ -329,7 +349,7 @@ router.post('/login', async (req, res) => {
         matricule: user.matricule,
         nom: user.nom,
         prenom: user.prenom,
-        role: user.role,
+        role: user.role
       }
     });
   } catch (error) {

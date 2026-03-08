@@ -13,13 +13,15 @@ import {
   X,
   CircleDot,
   Layers,
-  Cylinder
+  Cylinder,
+  Eye
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSidebar } from '../context/SidebarContext';
+import { useAuth } from '../context/AuthContext';
 
 // Menu items with translation keys
-const getMenuItems = (t) => [
+const getMenuItems = (t, isAdmin) => [
   { 
     title: t('navigation.dashboard'),
     titleKey: 'main',
@@ -46,6 +48,7 @@ const getMenuItems = (t) => [
     title: t('settings.general'),
     titleKey: 'system',
     items: [
+      ...(isAdmin ? [{ icon: Eye, labelKey: 'navigation.supervision', path: '/supervision' }] : []),
       { icon: Settings, labelKey: 'navigation.settings', path: '/parametres' },
       { icon: HelpCircle, labelKey: 'navigation.help', path: '/aide' },
     ]
@@ -54,10 +57,12 @@ const getMenuItems = (t) => [
 
 export default function Sidebar() {
   const { isOpen, isCollapsed, closeSidebar, toggleCollapse } = useSidebar();
+  const { currentUser } = useAuth();
   const location = useLocation();
   const { t, i18n } = useTranslation();
   
-  const menuItems = getMenuItems(t);
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'admin_systeme';
+  const menuItems = getMenuItems(t, isAdmin);
   const isRTL = i18n.dir() === 'rtl';
 
   return (

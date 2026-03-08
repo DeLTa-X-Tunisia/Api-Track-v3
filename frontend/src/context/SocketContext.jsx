@@ -55,6 +55,26 @@ export function SocketProvider({ children }) {
   const listenersRef = useRef(new Map());
   const { toast } = useModal();
   
+  const STORAGE_KEY = 'apitrack_auth_user';
+  
+  // Function to authenticate user with socket
+  const authenticateWithSocket = useCallback((socketInstance) => {
+    try {
+      const savedUser = localStorage.getItem(STORAGE_KEY);
+      if (savedUser) {
+        const user = JSON.parse(savedUser);
+        console.log('🔐 Authenticating user with socket:', user.nom);
+        socketInstance.emit('user:authenticate', {
+          userId: user.id,
+          nom: `${user.prenom} ${user.nom}`,
+          role: user.role
+        });
+      }
+    } catch (error) {
+      console.error('Error authenticating with socket:', error);
+    }
+  }, []);
+  
   // Initialize socket connection
   useEffect(() => {
     const socketInstance = io(SOCKET_URL, {
@@ -72,6 +92,9 @@ export function SocketProvider({ children }) {
       console.log('🔌 Socket connected:', socketInstance.id);
       setIsConnected(true);
       setConnectionError(null);
+      
+      // Auto-authenticate if user is logged in
+      authenticateWithSocket(socketInstance);
     });
 
     socketInstance.on('disconnect', (reason) => {
@@ -166,6 +189,30 @@ export function SocketProvider({ children }) {
       socket.emit(event, data);
     }
   }, [socket, isConnected]);
+  
+  // Authenticate user (call after login)
+  const authenticateUser = useCallback((user) => {
+    if (socket && isConnected && user) {
+      console.log('🔐 Manual user authentication:', user.nom || user.prenom);
+      socket.emit('user:authenticate', {
+        userId: user.id,
+        nom: `${user.prenom || ''} ${user.nom || ''}`.trim(),
+        role: user.role
+      });
+    }
+  }, [socket, isConnected]);
+  
+  // Listen for storage changes (login/logout)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      if (socket && isConnected) {
+        authenticateWithSocket(socket);
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [socket, isConnected, authenticateWithSocket]);
 
   const value = {
     socket,
@@ -176,6 +223,7 @@ export function SocketProvider({ children }) {
     joinRoom,
     leaveRoom,
     emit,
+    authenticateUser,
     SOCKET_EVENTS,
   };
 

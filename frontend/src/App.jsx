@@ -13,6 +13,7 @@ import TubesList from './pages/TubesList';
 import ComingSoon from './pages/ComingSoon';
 import LoginPage from './pages/LoginPage';
 import SettingsPage from './pages/SettingsPage';
+import SupervisionPage from './pages/SupervisionPage';
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -66,6 +67,7 @@ function AppContent() {
               <Route path="suivi" element={<ComingSoon />} />
               <Route path="produits" element={<ComingSoon />} />
               <Route path="documents" element={<ComingSoon />} />
+              <Route path="supervision" element={<SupervisionPage />} />
               <Route path="parametres" element={<SettingsPage />} />
               <Route path="aide" element={<ComingSoon />} />
               <Route path="*" element={<ComingSoon />} />

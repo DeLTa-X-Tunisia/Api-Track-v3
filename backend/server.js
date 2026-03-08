@@ -16,6 +16,7 @@ const usersRoutes = require('./routes/users');
 const lotsRoutes = require('./routes/lots');
 const tubesRoutes = require('./routes/tubes');
 const reparationsRoutes = require('./routes/reparations');
+const supervisionRoutes = require('./routes/supervision');
 
 // Initialize Express app
 const app = express();
@@ -252,6 +253,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/lots', lotsRoutes);
 app.use('/api/tubes', tubesRoutes);
 app.use('/api/reparations', reparationsRoutes);
+app.use('/api/supervision', supervisionRoutes);
 
 // 404 handler
 app.use((req, res) => {

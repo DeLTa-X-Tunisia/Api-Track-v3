@@ -1,4 +1,4 @@
-const API_BASE_URL = '/api';
+export const API_BASE_URL = '/api';
 
 // Generic fetch wrapper with error handling
 async function fetchAPI(endpoint, options = {}) {

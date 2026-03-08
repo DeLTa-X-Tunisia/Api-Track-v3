@@ -1,6 +1,10 @@
 const { Server } = require('socket.io');
+const { query } = require('./database');
 
 let io = null;
+
+// Track connected users in memory (for real-time updates)
+const connectedUsers = new Map();
 
 /**
  * Initialize Socket.IO server
@@ -22,6 +26,73 @@ const initializeSocket = (httpServer) => {
     const clientId = socket.id;
     console.log(`🔌 Socket connected [${clientId}]`);
 
+    // Handle user authentication
+    socket.on('user:authenticate', async (userData) => {
+      if (userData && userData.userId) {
+        let ipAddress = socket.handshake.address;
+        const userAgent = socket.handshake.headers['user-agent'];
+        
+        // Clean up IPv6-mapped IPv4 addresses (::ffff:127.0.0.1 -> 127.0.0.1)
+        if (ipAddress && ipAddress.startsWith('::ffff:')) {
+          ipAddress = ipAddress.substring(7);
+        }
+        if (ipAddress === '::1') {
+          ipAddress = '127.0.0.1';
+        }
+        
+        // Store user info
+        connectedUsers.set(clientId, {
+          socketId: clientId,
+          userId: userData.userId,
+          userName: userData.nom || 'Unknown',
+          userRole: userData.role || 'user',
+          connectedAt: new Date(),
+          ipAddress,
+          userAgent
+        });
+        
+        // Save to database - delete old sessions for this user first
+        try {
+          // Remove any existing sessions for this user (clean reconnects)
+          await query('DELETE FROM active_sessions WHERE user_id = $1', [userData.userId]);
+          
+          // Insert new session
+          await query(`
+            INSERT INTO active_sessions (user_id, socket_id, ip_address, user_agent)
+            VALUES ($1, $2, $3, $4)
+          `, [userData.userId, clientId, ipAddress, userAgent]);
+          
+          console.log(`👤 User ${userData.nom} authenticated [${clientId}]`);
+          
+          // Notify admins of new connection
+          io.emit('supervision:user-connected', {
+            userId: userData.userId,
+            userName: userData.nom,
+            userRole: userData.role,
+            socketId: clientId,
+            connectedAt: new Date()
+          });
+        } catch (error) {
+          console.error('Error saving active session:', error);
+        }
+      }
+    });
+
+    // Handle activity ping
+    socket.on('user:activity', async () => {
+      const user = connectedUsers.get(clientId);
+      if (user) {
+        try {
+          await query(
+            'UPDATE active_sessions SET last_activity = CURRENT_TIMESTAMP WHERE socket_id = $1',
+            [clientId]
+          );
+        } catch (error) {
+          // Silently fail
+        }
+      }
+    });
+
     // Join a room based on user role (for future use)
     socket.on('join:room', (room) => {
       socket.join(room);
@@ -35,8 +106,34 @@ const initializeSocket = (httpServer) => {
     });
 
     // Handle disconnection
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', async (reason) => {
       console.log(`❌ Socket disconnected [${clientId}] reason: ${reason}`);
+      
+      const user = connectedUsers.get(clientId);
+      if (user) {
+        try {
+          // Remove from database
+          await query('DELETE FROM active_sessions WHERE socket_id = $1', [clientId]);
+          
+          // Log the disconnection
+          await query(`
+            INSERT INTO connection_logs (user_id, action, status)
+            VALUES ($1, 'logout', 'success')
+          `, [user.userId]);
+          
+          // Notify admins
+          io.emit('supervision:user-disconnected', {
+            userId: user.userId,
+            userName: user.userName,
+            socketId: clientId,
+            reason
+          });
+        } catch (error) {
+          console.error('Error handling disconnect:', error);
+        }
+        
+        connectedUsers.delete(clientId);
+      }
     });
 
     // Handle errors
@@ -58,6 +155,30 @@ const getIO = () => {
     console.warn('⚠️ Socket.IO not initialized');
   }
   return io;
+};
+
+/**
+ * Get list of connected users
+ * @returns {Array}
+ */
+const getConnectedUsers = () => {
+  return Array.from(connectedUsers.values());
+};
+
+/**
+ * Force disconnect a user
+ * @param {string} socketId - Socket ID to disconnect
+ */
+const forceDisconnect = (socketId) => {
+  if (io) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit('force-logout');
+      socket.disconnect(true);
+      return true;
+    }
+  }
+  return false;
 };
 
 /**
@@ -136,5 +257,7 @@ module.exports = {
   getIO,
   emitToAll,
   emitToRoom,
+  getConnectedUsers,
+  forceDisconnect,
   SOCKET_EVENTS,
 };
