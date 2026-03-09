@@ -260,12 +260,28 @@ export default function LoginPage({ onLogin }) {
       </div>
 
       {/* Footer */}
-      <p 
-        className="mt-8 text-sm"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        {t('footer.copyright')}
-      </p>
+      <div className="mt-8 flex items-center justify-center gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        <span>© {new Date().getFullYear()} Api-Track.</span>
+        <span className="text-lg" role="img" aria-label="rock on">🤟</span>
+        <span>Azizi Mounir →</span>
+        <svg 
+          width="24" 
+          height="16" 
+          viewBox="0 0 360 240" 
+          className="inline-block rounded shadow-sm"
+          style={{ verticalAlign: 'middle' }}
+          aria-label="Tunisia Flag"
+        >
+          <rect width="360" height="240" fill="#E70013"/>
+          <circle cx="180" cy="120" r="60" fill="#FFFFFF"/>
+          <circle cx="174" cy="120" r="45" fill="#E70013"/>
+          <circle cx="185" cy="120" r="36" fill="#FFFFFF"/>
+          <polygon 
+            points="180,85 186.9,106.9 210,106.9 191.5,120.6 198.5,142.5 180,128.8 161.5,142.5 168.5,120.6 150,106.9 173.1,106.9" 
+            fill="#E70013"
+          />
+        </svg>
+      </div>
     </div>
   );
 }

@@ -56,10 +56,22 @@ export function AuthProvider({ children }) {
   };
 
   // Logout
-  const logout = () => {
+  const logout = (reason = null) => {
     setCurrentUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem(STORAGE_KEY);
+    if (reason) {
+      console.log('🔒 User logged out:', reason);
+    }
+  };
+  
+  // Force logout (from server - session expired)
+  const forceLogout = (reason = 'Session expirée') => {
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem(STORAGE_KEY);
+    console.log('⚠️ Force logout:', reason);
+    return reason;
   };
 
   // Check if user has a specific role
@@ -78,6 +90,7 @@ export function AuthProvider({ children }) {
     isAuthenticated,
     login,
     logout,
+    forceLogout,
     hasRole,
     isAdmin,
   };

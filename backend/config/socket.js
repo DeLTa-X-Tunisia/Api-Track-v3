@@ -2,6 +2,11 @@ const { Server } = require('socket.io');
 const { query } = require('./database');
 
 let io = null;
+let inactivityCheckInterval = null;
+
+// Configuration for auto-disconnect
+const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_CHECK_INTERVAL_MS = 30 * 1000; // Check every 30 seconds
 
 // Track connected users in memory (for real-time updates)
 const connectedUsers = new Map();
@@ -181,7 +186,93 @@ const initializeSocket = (httpServer) => {
   });
 
   console.log('🔌 Socket.IO initialized');
+  
+  // Start inactivity check interval
+  startInactivityCheck();
+  
   return io;
+};
+
+/**
+ * Check for inactive users and disconnect them
+ */
+const checkInactiveUsers = async () => {
+  if (!io) return;
+  
+  try {
+    // Find sessions that have been inactive for more than INACTIVITY_TIMEOUT_MS
+    const result = await query(`
+      SELECT as_t.socket_id, as_t.user_id, u.nom, u.prenom, as_t.ip_address, as_t.user_agent,
+             EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - as_t.last_activity)) * 1000 as inactive_ms
+      FROM active_sessions as_t
+      JOIN users u ON u.id = as_t.user_id
+      WHERE CURRENT_TIMESTAMP - as_t.last_activity > INTERVAL '${INACTIVITY_TIMEOUT_MS / 1000} seconds'
+    `);
+    
+    for (const session of result.rows) {
+      console.log(`⏰ Auto-disconnecting inactive user: ${session.prenom} ${session.nom} (inactive for ${Math.round(session.inactive_ms / 1000)}s)`);
+      
+      // Get socket and emit session expired event with reason
+      const socket = io.sockets.sockets.get(session.socket_id);
+      if (socket) {
+        socket.emit('session-expired', {
+          reason: 'inactivity',
+          message: 'Votre session a expiré pour cause d\'inactivité (5 minutes)'
+        });
+        socket.disconnect(true);
+      }
+      
+      // Remove from database
+      await query('DELETE FROM active_sessions WHERE socket_id = $1', [session.socket_id]);
+      
+      // Log the auto-disconnect
+      await query(`
+        INSERT INTO connection_logs (user_id, action, ip_address, user_agent, status, failure_reason)
+        VALUES ($1, 'timeout', $2, $3, 'success', 'Déconnexion automatique après 5 minutes d\'inactivité')
+      `, [session.user_id, session.ip_address, session.user_agent]);
+      
+      // Notify admins
+      io.emit('supervision:user-disconnected', {
+        userId: session.user_id,
+        userName: `${session.prenom} ${session.nom}`,
+        socketId: session.socket_id,
+        reason: 'inactivity_timeout',
+        message: 'Déconnecté automatiquement (inactivité)'
+      });
+      
+      // Remove from memory
+      connectedUsers.delete(session.socket_id);
+    }
+    
+    if (result.rows.length > 0) {
+      console.log(`✅ Auto-disconnected ${result.rows.length} inactive user(s)`);
+    }
+  } catch (error) {
+    console.error('Error checking inactive users:', error);
+  }
+};
+
+/**
+ * Start the inactivity check interval
+ */
+const startInactivityCheck = () => {
+  if (inactivityCheckInterval) {
+    clearInterval(inactivityCheckInterval);
+  }
+  
+  inactivityCheckInterval = setInterval(checkInactiveUsers, INACTIVITY_CHECK_INTERVAL_MS);
+  console.log(`⏰ Inactivity check started (timeout: ${INACTIVITY_TIMEOUT_MS / 1000}s, check interval: ${INACTIVITY_CHECK_INTERVAL_MS / 1000}s)`);
+};
+
+/**
+ * Stop the inactivity check interval
+ */
+const stopInactivityCheck = () => {
+  if (inactivityCheckInterval) {
+    clearInterval(inactivityCheckInterval);
+    inactivityCheckInterval = null;
+    console.log('⏹ Inactivity check stopped');
+  }
 };
 
 /**
@@ -206,13 +297,35 @@ const getConnectedUsers = () => {
 /**
  * Force disconnect a user
  * @param {string} socketId - Socket ID to disconnect
+ * @param {string} reason - Reason for disconnect
  */
-const forceDisconnect = (socketId) => {
+const forceDisconnect = async (socketId, reason = 'forced_logout') => {
   if (io) {
     const socket = io.sockets.sockets.get(socketId);
+    const user = connectedUsers.get(socketId);
+    
     if (socket) {
-      socket.emit('force-logout');
+      // Emit session expired with reason
+      socket.emit('session-expired', {
+        reason: reason,
+        message: reason === 'forced_logout' 
+          ? 'Vous avez été déconnecté par un administrateur'
+          : 'Votre session a expiré'
+      });
       socket.disconnect(true);
+      
+      // Log forced disconnect
+      if (user) {
+        try {
+          await query(`
+            INSERT INTO connection_logs (user_id, action, status, failure_reason)
+            VALUES ($1, 'forced_logout', 'success', $2)
+          `, [user.userId, `Déconnexion forcée par administrateur`]);
+        } catch (error) {
+          console.error('Error logging forced disconnect:', error);
+        }
+      }
+      
       return true;
     }
   }
@@ -313,5 +426,6 @@ module.exports = {
   getConnectedUsers,
   forceDisconnect,
   getSocketMetrics,
+  stopInactivityCheck,
   SOCKET_EVENTS,
 };

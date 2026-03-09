@@ -99,6 +99,8 @@ const actionConfig = {
   redo: { labelKey: 'validation.redo', icon: RotateCcw, color: '#8b5cf6', hoverColor: '#7c3aed', needsComment: false, outline: true },
   // Repair resolution actions (when tube is "En réparation")
   repair_resolution: { labelKey: 'repair.resolutionTitle', icon: Settings2, color: '#3b82f6', hoverColor: '#2563eb', needsComment: false },
+  repair_validated: { labelKey: 'repair.repairValidated', icon: Check, color: '#22c55e', hoverColor: '#16a34a', needsComment: false },
+  repair_derogation: { labelKey: 'repair.derogation', icon: AlertTriangle, color: '#f97316', hoverColor: '#ea580c', needsComment: false },
   // Resume from interruption (when tube is "Interrompu")
   resume: { labelKey: 'validation.resume', icon: Play, color: '#22c55e', hoverColor: '#16a34a', needsComment: false },
   // Certification actions (last 2 stages only)
@@ -118,21 +120,18 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
   const [defauts, setDefauts] = useState([]);
   const [causes, setCauses] = useState([]);
   const [responsabilites, setResponsabilites] = useState([]);
+  const [actionsFutures, setActionsFutures] = useState([]);
   const [dropdownsLoading, setDropdownsLoading] = useState(false);
   
   // Multi-repair form state - array of repair items
   const emptyRepairItem = {
-    defaut_id: '',
-    defaut_code: '',
-    defaut_libelle: '',
-    cause_id: '',
-    cause_code: '',
-    cause_libelle: '',
+    defaut_ids: [], // Array for multi-select
+    cause_ids: [], // Array for multi-select
     responsabilite_id: '',
     responsabilite_code: '',
     responsabilite_libelle: '',
     reparation_a_faire: '',
-    action_future: '',
+    action_future_ids: [], // Array for multi-select
     commentaire: '',
     images: [], // Array of { file, preview }
   };
@@ -201,14 +200,16 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
   const loadDropdownData = async () => {
     setDropdownsLoading(true);
     try {
-      const [defautsData, causesData, responsabilitesData] = await Promise.all([
+      const [defautsData, causesData, responsabilitesData, actionsFuturesData] = await Promise.all([
         reparationsAPI.getDefauts(),
         reparationsAPI.getCauses(),
         reparationsAPI.getResponsabilites(),
+        reparationsAPI.getActionsFutures(),
       ]);
       setDefauts(defautsData);
       setCauses(causesData);
       setResponsabilites(responsabilitesData);
+      setActionsFutures(actionsFuturesData);
     } catch (error) {
       console.error('Error loading dropdown data:', error);
       toast.error('Erreur lors du chargement des données');
@@ -827,21 +828,25 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
     setRepairs(newRepairs);
   };
 
-  // Handle dropdown selection (receives full object from CrudSelect)
-  const handleDropdownSelect = (index, type, item) => {
+  // Handle dropdown selection
+  // For multi-select (defaut, cause, action_future): receives array of IDs
+  // For single-select (responsabilite): receives full item object
+  const handleDropdownSelect = (index, type, value) => {
     const newRepairs = [...repairs];
     if (type === 'defaut') {
-      newRepairs[index].defaut_id = item?.id || '';
-      newRepairs[index].defaut_code = item?.code || '';
-      newRepairs[index].defaut_libelle = item?.libelle || '';
+      // Multi-select: value is array of IDs
+      newRepairs[index].defaut_ids = value || [];
     } else if (type === 'cause') {
-      newRepairs[index].cause_id = item?.id || '';
-      newRepairs[index].cause_code = item?.code || '';
-      newRepairs[index].cause_libelle = item?.libelle || '';
+      // Multi-select: value is array of IDs
+      newRepairs[index].cause_ids = value || [];
     } else if (type === 'responsabilite') {
-      newRepairs[index].responsabilite_id = item?.id || '';
-      newRepairs[index].responsabilite_code = item?.code || '';
-      newRepairs[index].responsabilite_libelle = item?.libelle || '';
+      // Single select: value is the item object
+      newRepairs[index].responsabilite_id = value?.id || '';
+      newRepairs[index].responsabilite_code = value?.code || '';
+      newRepairs[index].responsabilite_libelle = value?.libelle || '';
+    } else if (type === 'action_future') {
+      // Multi-select: value is array of IDs
+      newRepairs[index].action_future_ids = value || [];
     }
     setRepairs(newRepairs);
   };
@@ -896,7 +901,7 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
     if (!stage) return;
 
     // Validate at least one repair has defaut selected
-    const hasValidRepair = repairs.some(r => r.defaut_id);
+    const hasValidRepair = repairs.some(r => r.defaut_ids && r.defaut_ids.length > 0);
     if (!hasValidRepair) {
       toast.error('Veuillez sélectionner au moins un défaut');
       return;
@@ -915,10 +920,32 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
       formData.append('validator_name', validatorName || 'Utilisateur');
 
       // Prepare repairs data with image counts
+      // Convert defaut_ids and cause_ids arrays to details for backend
       const repairsData = repairs.map(r => ({
-        ...r,
+        defaut_ids: r.defaut_ids || [],
+        defaut_details: defauts.filter(d => r.defaut_ids?.includes(d.id)).map(d => ({
+          id: d.id,
+          code: d.code,
+          libelle: d.libelle
+        })),
+        cause_ids: r.cause_ids || [],
+        cause_details: causes.filter(c => r.cause_ids?.includes(c.id)).map(c => ({
+          id: c.id,
+          code: c.code,
+          libelle: c.libelle
+        })),
+        responsabilite_id: r.responsabilite_id,
+        responsabilite_code: r.responsabilite_code,
+        responsabilite_libelle: r.responsabilite_libelle,
+        reparation_a_faire: r.reparation_a_faire,
+        action_future_ids: r.action_future_ids || [],
+        action_future_details: actionsFutures.filter(a => r.action_future_ids?.includes(a.id)).map(a => ({
+          id: a.id,
+          code: a.code,
+          libelle: a.libelle
+        })),
+        commentaire: r.commentaire,
         image_count: r.images.length,
-        images: undefined, // Remove file objects from JSON
       }));
       formData.append('repairs', JSON.stringify(repairsData));
 
@@ -1032,7 +1059,7 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
   };
 
   // Stages without repair button (Formage, Pointage, SAW)
-  const stagesWithoutRepair = ['formage', 'pointage', 'saw'];
+  const stagesWithoutRepair = ['formage', 'pointage', 'saw', 'controle_dim'];
 
   // Check if a stage was skipped (last action was 'skip')
   const wasStageSkipped = (stageKey) => {
@@ -1474,9 +1501,13 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
                                                 <span className="font-medium">Réparation à faire:</span> {repair.reparation_a_faire}
                                               </div>
                                             )}
-                                            {repair.action_future && (
+                                            {(repair.action_future_details?.length > 0 || repair.action_future_libelle) && (
                                               <div style={{ color: 'var(--color-text-secondary)' }}>
-                                                <span className="font-medium">Action future:</span> {repair.action_future}
+                                                <span className="font-medium">Action future:</span> {
+                                                  repair.action_future_details?.length > 0
+                                                    ? repair.action_future_details.map(a => `${a.code} - ${a.libelle}`).join(', ')
+                                                    : `${repair.action_future_code} - ${repair.action_future_libelle}`
+                                                }
                                               </div>
                                             )}
                                             {repair.commentaire && (
@@ -1549,7 +1580,7 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
                                               >
                                                 {isSkipAction 
                                                   ? `Passer – ${entry.comment || 'Sans raison'}`
-                                                  : (actionInfo.label || entry.action)
+                                                  : (actionInfo.labelKey ? t(actionInfo.labelKey) : entry.action)
                                                 }
                                               </span>
                                               <div className="flex items-center gap-2">
@@ -1560,7 +1591,7 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
                                                 <button
                                                   onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleDeleteHistoryEntry(entry.id, actionInfo.label || entry.action);
+                                                    handleDeleteHistoryEntry(entry.id, actionInfo.labelKey ? t(actionInfo.labelKey) : entry.action);
                                                   }}
                                                   className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-all"
                                                   title={t('common.delete')}
@@ -2520,11 +2551,11 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
                       <div className="p-4 space-y-4">
                         {/* Dropdowns Section */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {/* Défaut Dropdown with CRUD */}
+                          {/* Défaut Dropdown with CRUD - Multi-select */}
                           <CrudSelect
                             label={t('repair.defect')}
-                            value={repair.defaut_id}
-                            onChange={(item) => handleDropdownSelect(repairIndex, 'defaut', item)}
+                            value={repair.defaut_ids}
+                            onChange={(ids) => handleDropdownSelect(repairIndex, 'defaut', ids)}
                             items={defauts}
                             onAdd={reparationsAPI.createDefaut}
                             onUpdate={reparationsAPI.updateDefaut}
@@ -2534,13 +2565,14 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
                             placeholder={t('repair.selectDefectPlaceholder')}
                             icon={CircleAlert}
                             accentColor="#ef4444"
+                            multiple={true}
                           />
 
-                          {/* Cause Dropdown with CRUD */}
+                          {/* Cause Dropdown with CRUD - Multi-select */}
                           <CrudSelect
                             label={t('repair.cause')}
-                            value={repair.cause_id}
-                            onChange={(item) => handleDropdownSelect(repairIndex, 'cause', item)}
+                            value={repair.cause_ids}
+                            onChange={(ids) => handleDropdownSelect(repairIndex, 'cause', ids)}
                             items={causes}
                             onAdd={reparationsAPI.createCause}
                             onUpdate={reparationsAPI.updateCause}
@@ -2549,6 +2581,7 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
                             placeholder={t('repair.selectCausePlaceholder')}
                             icon={HelpCircle}
                             accentColor="#f59e0b"
+                            multiple={true}
                           />
 
                           {/* Responsabilité Dropdown with CRUD */}
@@ -2590,28 +2623,21 @@ export default function TubePipeline({ tube, onUpdate, compact = false }) {
                             />
                           </div>
 
-                          {/* Action future */}
-                          <div className="group">
-                            <label className="flex items-center gap-1.5 text-xs font-medium mb-1.5 transition-colors group-focus-within:text-cyan-500" 
-                              style={{ color: 'var(--color-text-muted)' }}>
-                              <Shield size={12} style={{ color: '#06b6d4' }} />
-                              {t('repair.futureAction')}
-                            </label>
-                            <input
-                              type="text"
-                              value={repair.action_future}
-                              onChange={(e) => updateRepairField(repairIndex, 'action_future', e.target.value)}
-                              className="w-full px-3 py-2.5 rounded-xl border-2 text-sm transition-all duration-200 
-                                focus:ring-2 focus:ring-offset-1 focus:border-cyan-400 hover:border-cyan-300 hover:shadow-sm"
-                              style={{
-                                backgroundColor: 'var(--color-input)',
-                                borderColor: 'var(--color-border)',
-                                color: 'var(--color-text-primary)',
-                                '--tw-ring-color': 'rgba(6, 182, 212, 0.3)',
-                              }}
-                              placeholder={t('repair.preventiveMeasures')}
-                            />
-                          </div>
+                          {/* Action future - CrudSelect Dropdown Multi-select */}
+                          <CrudSelect
+                            label={t('repair.futureAction')}
+                            value={repair.action_future_ids}
+                            onChange={(ids) => handleDropdownSelect(repairIndex, 'action_future', ids)}
+                            items={actionsFutures}
+                            onAdd={reparationsAPI.createActionFuture}
+                            onUpdate={reparationsAPI.updateActionFuture}
+                            onDelete={reparationsAPI.deleteActionFuture}
+                            onRefresh={loadDropdownData}
+                            placeholder={t('repair.preventiveMeasures')}
+                            icon={Shield}
+                            accentColor="#06b6d4"
+                            multiple={true}
+                          />
 
                           {/* Commentaire - Full width */}
                           <div className="sm:col-span-2 group">

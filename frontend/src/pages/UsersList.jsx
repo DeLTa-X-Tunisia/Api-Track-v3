@@ -70,8 +70,8 @@ export default function UsersList() {
   // Role options
   const roleOptions = [
     { value: 'admin_systeme', label: 'Admin Système', color: '#8b5cf6' },
-    { value: 'admin_limite', label: 'Admin accès limité', color: '#3b82f6' },
-    { value: 'superviseur_limite', label: 'Superviseur accès limité', color: '#f59e0b' },
+    { value: 'admin_limite', label: 'Admin', color: '#3b82f6' },
+    { value: 'superviseur_limite', label: 'Superviseur', color: '#f59e0b' },
     { value: 'observateur_limite', label: 'Observateur accès limité', color: '#6b7280' },
   ];
 

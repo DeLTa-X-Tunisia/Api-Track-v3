@@ -4,6 +4,10 @@ import { useModal } from './ModalContext';
 
 const SocketContext = createContext(null);
 
+// Configuration for activity tracking
+const ACTIVITY_PING_INTERVAL = 60 * 1000; // Send activity ping every 60 seconds
+const ACTIVITY_DEBOUNCE_MS = 5000; // Debounce activity events by 5 seconds
+
 // Socket events constants (must match backend)
 export const SOCKET_EVENTS = {
   // Bobines events
@@ -52,7 +56,12 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [sessionExpiredReason, setSessionExpiredReason] = useState(null);
   const listenersRef = useRef(new Map());
+  const activityIntervalRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
+  const isActiveRef = useRef(true);
   const { toast } = useModal();
   
   const STORAGE_KEY = 'apitrack_auth_user';
@@ -72,6 +81,26 @@ export function SocketProvider({ children }) {
       }
     } catch (error) {
       console.error('Error authenticating with socket:', error);
+    }
+  }, []);
+  
+  // Send activity ping to server
+  const sendActivityPing = useCallback((socketInstance) => {
+    if (socketInstance && socketInstance.connected && isActiveRef.current) {
+      const savedUser = localStorage.getItem(STORAGE_KEY);
+      if (savedUser) {
+        socketInstance.emit('user:activity');
+        console.log('📍 Activity ping sent');
+      }
+    }
+  }, []);
+  
+  // Track user activity
+  const trackActivity = useCallback(() => {
+    const now = Date.now();
+    if (now - lastActivityRef.current > ACTIVITY_DEBOUNCE_MS) {
+      lastActivityRef.current = now;
+      isActiveRef.current = true;
     }
   }, []);
   
@@ -129,15 +158,128 @@ export function SocketProvider({ children }) {
     socketInstance.on('reconnect_error', (error) => {
       console.error('🔌 Reconnection error:', error.message);
     });
+    
+    // Handle session expiration (inactivity or forced logout)
+    socketInstance.on('session-expired', (data) => {
+      console.log('⚠️ Session expired:', data.reason, data.message);
+      setSessionExpired(true);
+      setSessionExpiredReason(data);
+      
+      // Clear local storage and redirect
+      localStorage.removeItem(STORAGE_KEY);
+      
+      // Show toast based on reason
+      const toastMessage = data.message || 'Votre session a expiré';
+      toast({ 
+        message: toastMessage, 
+        type: 'warning',
+        duration: 5000 
+      });
+      
+      // Redirect to login after a short delay
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    });
+    
+    // Handle force-logout (legacy support)
+    socketInstance.on('force-logout', () => {
+      console.log('⚠️ Force logout received');
+      setSessionExpired(true);
+      setSessionExpiredReason({ reason: 'forced', message: 'Vous avez été déconnecté' });
+      localStorage.removeItem(STORAGE_KEY);
+      toast({ 
+        message: 'Vous avez été déconnecté', 
+        type: 'warning',
+        duration: 5000 
+      });
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    });
 
     setSocket(socketInstance);
 
     // Cleanup on unmount
     return () => {
+      if (activityIntervalRef.current) {
+        clearInterval(activityIntervalRef.current);
+      }
       socketInstance.removeAllListeners();
       socketInstance.disconnect();
     };
   }, []);
+  
+  // Set up activity tracking
+  useEffect(() => {
+    // Activity events to track
+    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll', 'mousemove'];
+    
+    // Add event listeners
+    activityEvents.forEach(event => {
+      window.addEventListener(event, trackActivity, { passive: true });
+    });
+    
+    // Start activity ping interval
+    if (socket) {
+      activityIntervalRef.current = setInterval(() => {
+        sendActivityPing(socket);
+      }, ACTIVITY_PING_INTERVAL);
+    }
+    
+    // Cleanup
+    return () => {
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, trackActivity);
+      });
+      if (activityIntervalRef.current) {
+        clearInterval(activityIntervalRef.current);
+      }
+    };
+  }, [socket, trackActivity, sendActivityPing]);
+  
+  // Handle browser close / tab close
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Try to notify server about disconnect
+      if (socket && socket.connected) {
+        const savedUser = localStorage.getItem(STORAGE_KEY);
+        if (savedUser) {
+          const user = JSON.parse(savedUser);
+          // Use sendBeacon for reliable delivery on page unload
+          if (navigator.sendBeacon) {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+            navigator.sendBeacon(
+              `${apiUrl}/supervision/browser-close`,
+              JSON.stringify({ userId: user.id, socketId: socket.id })
+            );
+          }
+        }
+      }
+    };
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Page is being hidden (potential close/tab switch)
+        isActiveRef.current = false;
+      } else if (document.visibilityState === 'visible') {
+        // User returned to page
+        isActiveRef.current = true;
+        lastActivityRef.current = Date.now();
+        if (socket && socket.connected) {
+          sendActivityPing(socket);
+        }
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [socket, sendActivityPing]);
 
   // Subscribe to an event
   const subscribe = useCallback((event, callback) => {
@@ -218,6 +360,8 @@ export function SocketProvider({ children }) {
     socket,
     isConnected,
     connectionError,
+    sessionExpired,
+    sessionExpiredReason,
     subscribe,
     unsubscribe,
     joinRoom,

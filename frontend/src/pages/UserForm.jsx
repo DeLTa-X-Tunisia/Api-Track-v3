@@ -34,8 +34,8 @@ export default function UserForm({ user, onClose, onSuccess }) {
   // Role options
   const roleOptions = [
     { value: 'admin_systeme', label: 'Admin Système' },
-    { value: 'admin_limite', label: 'Admin accès limité' },
-    { value: 'superviseur_limite', label: 'Superviseur accès limité' },
+    { value: 'admin_limite', label: 'Admin' },
+    { value: 'superviseur_limite', label: 'Superviseur' },
     { value: 'observateur_limite', label: 'Observateur accès limité' },
   ];
 

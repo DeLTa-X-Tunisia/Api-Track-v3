@@ -690,6 +690,130 @@ router.delete('/causes-interruption/:id', async (req, res) => {
   }
 });
 
+// ==================== ACTIONS FUTURES CRUD ====================
+
+// Get all actions_futures
+router.get('/actions-futures', async (req, res) => {
+  try {
+    const { actif } = req.query;
+    let sql = 'SELECT * FROM actions_futures';
+    const params = [];
+    
+    if (actif !== undefined && actif !== 'all') {
+      sql += ' WHERE actif = $1';
+      params.push(actif === 'true');
+    }
+    
+    sql += ' ORDER BY code';
+    const result = await query(sql, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching actions_futures:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des actions futures' });
+  }
+});
+
+// Get single action_future
+router.get('/actions-futures/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('SELECT * FROM actions_futures WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Action future non trouvée' });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching action_future:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération de l\'action future' });
+  }
+});
+
+// Create action_future
+router.post('/actions-futures', async (req, res) => {
+  try {
+    const { code, libelle, description, user_id, user_name } = req.body;
+    const result = await query(
+      `INSERT INTO actions_futures (code, libelle, description, created_by_id, created_by_name) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [code, libelle, description, user_id || null, user_name || null]
+    );
+    
+    // Log history
+    await logHistory('actions_futures', result.rows[0].id, 'CREATE', null, result.rows[0], user_id, user_name);
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating action_future:', error);
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Ce code existe déjà' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la création de l\'action future' });
+  }
+});
+
+// Update action_future
+router.put('/actions-futures/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { code, libelle, description, actif, user_id, user_name } = req.body;
+    
+    // Get old values
+    const oldResult = await query('SELECT * FROM actions_futures WHERE id = $1', [id]);
+    if (oldResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Action future non trouvée' });
+    }
+    const oldValues = oldResult.rows[0];
+    
+    const result = await query(
+      `UPDATE actions_futures SET code = $1, libelle = $2, description = $3, actif = $4, 
+       updated_at = CURRENT_TIMESTAMP, updated_by_id = $5, updated_by_name = $6 
+       WHERE id = $7 RETURNING *`,
+      [code, libelle, description, actif !== undefined ? actif : true, user_id || null, user_name || null, id]
+    );
+    
+    // Log history
+    await logHistory('actions_futures', id, 'UPDATE', oldValues, result.rows[0], user_id, user_name);
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating action_future:', error);
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Ce code existe déjà' });
+    }
+    res.status(500).json({ error: 'Erreur lors de la modification de l\'action future' });
+  }
+});
+
+// Delete action_future (soft delete)
+router.delete('/actions-futures/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user_id, user_name } = req.body || {};
+    
+    // Get old values
+    const oldResult = await query('SELECT * FROM actions_futures WHERE id = $1', [id]);
+    if (oldResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Action future non trouvée' });
+    }
+    const oldValues = oldResult.rows[0];
+    
+    // Soft delete
+    const result = await query(
+      `UPDATE actions_futures SET actif = false, updated_at = CURRENT_TIMESTAMP, 
+       updated_by_id = $1, updated_by_name = $2 WHERE id = $3 RETURNING *`,
+      [user_id || null, user_name || null, id]
+    );
+    
+    // Log history
+    await logHistory('actions_futures', id, 'DELETE', oldValues, result.rows[0], user_id, user_name);
+    
+    res.json({ message: 'Action future désactivée', item: result.rows[0] });
+  } catch (error) {
+    console.error('Error deleting action_future:', error);
+    res.status(500).json({ error: 'Erreur lors de la suppression de l\'action future' });
+  }
+});
+
 // ==================== HISTORY ====================
 
 // Get history for a specific table/record

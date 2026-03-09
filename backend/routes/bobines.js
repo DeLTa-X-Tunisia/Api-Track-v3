@@ -293,6 +293,36 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // RULE: A bobine can only be deleted if all its linked lots are cancelled ('annulé')
+    // Check if bobine is linked to any lot that is NOT cancelled
+    const linkedLots = await query(
+      `SELECT id, numero, statut FROM lots WHERE bobine_id = $1 AND LOWER(statut) NOT IN ('annulé', 'annule', 'cancelled')`,
+      [id]
+    );
+    
+    if (linkedLots.rows.length > 0) {
+      const lotDetails = linkedLots.rows.map(l => `${l.numero} (${l.statut})`).join(', ');
+      
+      // Check specifically for engaged lots  
+      const engagedStatuses = ['production', 'en production', 'en cours', 'engagé', 'en_cours'];
+      const engagedLots = linkedLots.rows.filter(l => 
+        engagedStatuses.includes(l.statut?.toLowerCase())
+      );
+      
+      let errorMessage = `Impossible de supprimer cette bobine : elle est liée au(x) lot(s) actif(s) : ${lotDetails}.`;
+      
+      if (engagedLots.length > 0) {
+        errorMessage = `Impossible de supprimer cette bobine : elle est liée à des lots engagés en production (${lotDetails}).`;
+      }
+      errorMessage += ` Une bobine ne peut être supprimée que si tous ses lots sont annulés.`;
+      
+      return res.status(400).json({
+        error: errorMessage,
+        code: 'BOBINE_HAS_ACTIVE_LOTS',
+        linkedLots: linkedLots.rows
+      });
+    }
 
     // Get photos to delete files
     const photosResult = await query(

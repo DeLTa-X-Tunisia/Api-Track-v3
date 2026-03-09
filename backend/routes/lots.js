@@ -310,7 +310,25 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Lot non trouvé' });
     }
     
-    const bobineId = lot.rows[0].bobine_id;
+    const lotData = lot.rows[0];
+    
+    // RULE: Check if lot has any linked tubes - CANNOT DELETE IF TUBES EXIST
+    // A lot can only be deleted if it has NO tubes linked (regardless of status)
+    const linkedTubes = await query('SELECT COUNT(*) as count FROM tubes WHERE lot_id = $1', [id]);
+    const tubeCount = parseInt(linkedTubes.rows[0].count);
+    
+    if (tubeCount > 0) {
+      const statusInfo = lotData.statut ? ` (statut: ${lotData.statut})` : '';
+      return res.status(400).json({ 
+        error: `Impossible de supprimer ce lot${statusInfo} : ${tubeCount} tube(s) y sont liés en production. Un lot ne peut être supprimé que s'il n'a aucun tube lié.`,
+        code: 'LOT_HAS_TUBES',
+        tubeCount: tubeCount,
+        statut: lotData.statut
+      });
+    }
+    
+    // If no tubes are linked, deletion is allowed (even if lot is engaged)
+    const bobineId = lotData.bobine_id;
     
     // Start transaction
     await query('BEGIN');

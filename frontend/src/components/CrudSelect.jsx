@@ -18,6 +18,7 @@ import { useModal } from '../context/ModalContext';
 
 /**
  * CrudSelect - Modern dropdown with integrated CRUD operations
+ * Supports both single and multi-select modes
  */
 export default function CrudSelect({
   label,
@@ -36,6 +37,7 @@ export default function CrudSelect({
   disabled = false,
   icon: Icon = null,
   accentColor = '#3b82f6',
+  multiple = false, // Enable multi-select mode
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isManageOpen, setIsManageOpen] = useState(false);
@@ -111,7 +113,12 @@ export default function CrudSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedItem = items.find(item => item.id === parseInt(value));
+  // For single select: find selected item
+  // For multi-select: find all selected items
+  const selectedItem = multiple ? null : items.find(item => item.id === parseInt(value));
+  const selectedItems = multiple 
+    ? items.filter(item => Array.isArray(value) && value.includes(item.id))
+    : [];
 
   const getUserInfo = () => ({
     user_id: currentUser?.id,
@@ -119,9 +126,32 @@ export default function CrudSelect({
   });
 
   const handleSelect = (item) => {
-    onChange(item);
-    setIsOpen(false);
-    setSearchQuery('');
+    if (multiple) {
+      // Multi-select: toggle item in array
+      const currentValues = Array.isArray(value) ? value : [];
+      const isSelected = currentValues.includes(item.id);
+      if (isSelected) {
+        // Remove from selection
+        onChange(currentValues.filter(id => id !== item.id));
+      } else {
+        // Add to selection
+        onChange([...currentValues, item.id]);
+      }
+      // Don't close dropdown in multi-select mode
+    } else {
+      // Single select: regular behavior
+      onChange(item);
+      setIsOpen(false);
+      setSearchQuery('');
+    }
+  };
+
+  // Check if item is selected (for multi-select mode)
+  const isItemSelected = (item) => {
+    if (multiple) {
+      return Array.isArray(value) && value.includes(item.id);
+    }
+    return item.id === parseInt(value);
   };
 
   const handleAdd = async () => {
@@ -220,21 +250,52 @@ export default function CrudSelect({
         style={{
           backgroundColor: 'var(--color-input)',
           borderColor: isOpen ? accentColor : 'var(--color-border)',
-          color: selectedItem ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
+          color: (multiple ? selectedItems.length > 0 : selectedItem) ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
           '--tw-ring-color': `${accentColor}30`,
         }}
       >
-        <span className="truncate flex items-center gap-2">
-          {selectedItem && showCode && (
-            <span 
-              className="px-2 py-0.5 rounded text-sm font-mono font-bold"
-              style={{ backgroundColor: `${accentColor}15`, color: accentColor }}
-            >
-              {selectedItem[codeField]}
-            </span>
-          )}
-          {selectedItem ? <span className="text-xs text-gray-500 dark:text-gray-400">{selectedItem[displayField]}</span> : placeholder}
-        </span>
+        {multiple ? (
+          // Multi-select display
+          <span className="flex-1 flex flex-wrap items-center gap-1 min-h-[20px]">
+            {selectedItems.length > 0 ? (
+              selectedItems.map(item => (
+                <span 
+                  key={item.id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium"
+                  style={{ backgroundColor: `${accentColor}15`, color: accentColor }}
+                >
+                  {showCode && <span className="font-mono font-bold">{item[codeField]}</span>}
+                  <span style={{ color: 'var(--color-text-primary)' }}>{item[displayField]}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelect(item); // Toggle off
+                    }}
+                    className="ml-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded p-0.5 transition-colors"
+                  >
+                    <X size={10} className="text-red-500" />
+                  </button>
+                </span>
+              ))
+            ) : (
+              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{placeholder}</span>
+            )}
+          </span>
+        ) : (
+          // Single select display
+          <span className="truncate flex items-center gap-2">
+            {selectedItem && showCode && (
+              <span 
+                className="px-2 py-0.5 rounded text-sm font-mono font-bold"
+                style={{ backgroundColor: `${accentColor}15`, color: accentColor }}
+              >
+                {selectedItem[codeField]}
+              </span>
+            )}
+            {selectedItem ? <span className="text-xs" style={{ color: 'var(--color-text-primary)' }}>{selectedItem[displayField]}</span> : placeholder}
+          </span>
+        )}
         <ChevronDown 
           size={16} 
           className={`flex-shrink-0 ml-2 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
@@ -305,39 +366,52 @@ export default function CrudSelect({
           </div>
         ) : (
           <div className="py-1 overflow-y-auto flex-1">
-            {filteredItems.map((item, index) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleSelect(item)}
-                className={`w-full px-3 py-2.5 text-left text-sm flex items-center gap-3
-                  transition-all duration-150 hover:pl-4
-                  ${item.id === parseInt(value) 
-                    ? 'font-medium' 
-                    : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
-                style={{ 
-                  color: 'var(--color-text-primary)',
-                  backgroundColor: item.id === parseInt(value) ? `${accentColor}10` : 'transparent',
-                  animationDelay: `${index * 30}ms`,
-                }}
-              >
-                {showCode && (
-                  <span 
-                    className="px-2 py-1 rounded text-sm font-bold font-mono min-w-[50px] text-center"
-                    style={{ 
-                      backgroundColor: item.id === parseInt(value) ? `${accentColor}20` : `${accentColor}10`,
-                      color: item.id === parseInt(value) ? accentColor : 'var(--color-text-primary)'
-                    }}
-                  >
-                    {item[codeField]}
-                  </span>
-                )}
-                <span className="flex-1 text-xs text-gray-500 dark:text-gray-400">{item[displayField]}</span>
-                {item.id === parseInt(value) && (
-                  <Check size={14} style={{ color: accentColor }} />
-                )}
-              </button>
-            ))}
+            {filteredItems.map((item, index) => {
+              const selected = isItemSelected(item);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelect(item)}
+                  className={`w-full px-3 py-2.5 text-left text-sm flex items-center gap-3
+                    transition-all duration-150 hover:pl-4
+                    ${selected 
+                      ? 'font-medium' 
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
+                  style={{ 
+                    color: 'var(--color-text-primary)',
+                    backgroundColor: selected ? `${accentColor}10` : 'transparent',
+                    animationDelay: `${index * 30}ms`,
+                  }}
+                >
+                  {/* Checkbox for multi-select mode */}
+                  {multiple && (
+                    <span 
+                      className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all duration-150
+                        ${selected ? 'border-transparent' : 'border-gray-300 dark:border-gray-600'}`}
+                      style={{ backgroundColor: selected ? accentColor : 'transparent' }}
+                    >
+                      {selected && <Check size={10} className="text-white" />}
+                    </span>
+                  )}
+                  {showCode && (
+                    <span 
+                      className="px-2 py-1 rounded text-sm font-bold font-mono min-w-[50px] text-center"
+                      style={{ 
+                        backgroundColor: selected ? `${accentColor}20` : `${accentColor}10`,
+                        color: selected ? accentColor : 'var(--color-text-primary)'
+                      }}
+                    >
+                      {item[codeField]}
+                    </span>
+                  )}
+                  <span className="flex-1 text-xs" style={{ color: 'var(--color-text-primary)' }}>{item[displayField]}</span>
+                  {!multiple && selected && (
+                    <Check size={14} style={{ color: accentColor }} />
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

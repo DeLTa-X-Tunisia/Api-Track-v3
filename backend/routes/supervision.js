@@ -397,4 +397,61 @@ router.updateActivity = async (socketId) => {
   }
 };
 
+// POST /api/supervision/browser-close - Handle browser close beacon (no auth required for beacon)
+router.post('/browser-close', async (req, res) => {
+  try {
+    // Parse body if it's a string (from sendBeacon)
+    let body = req.body;
+    if (typeof body === 'string') {
+      body = JSON.parse(body);
+    }
+    
+    const { userId, socketId } = body;
+    
+    if (!userId || !socketId) {
+      return res.status(400).json({ error: 'Missing userId or socketId' });
+    }
+    
+    // Get user info before deleting session
+    const userResult = await query(
+      'SELECT nom, prenom FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    // Get session info
+    const sessionResult = await query(
+      'SELECT ip_address, user_agent FROM active_sessions WHERE socket_id = $1',
+      [socketId]
+    );
+    
+    // Remove session
+    await query('DELETE FROM active_sessions WHERE socket_id = $1', [socketId]);
+    
+    // Log the browser close disconnect
+    const session = sessionResult.rows[0];
+    await query(`
+      INSERT INTO connection_logs (user_id, action, ip_address, user_agent, status, failure_reason)
+      VALUES ($1, 'logout', $2, $3, 'success', 'Fermeture du navigateur')
+    `, [userId, session?.ip_address, session?.user_agent]);
+    
+    // Notify admins via socket
+    const io = getIO();
+    if (io && userResult.rows[0]) {
+      io.emit('supervision:user-disconnected', {
+        userId: parseInt(userId),
+        userName: `${userResult.rows[0].prenom} ${userResult.rows[0].nom}`,
+        socketId,
+        reason: 'browser_close',
+        message: 'Fermeture du navigateur'
+      });
+    }
+    
+    console.log(`🔒 Browser close handled for user #${userId}`);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Error handling browser close:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

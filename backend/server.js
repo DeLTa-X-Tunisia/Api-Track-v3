@@ -8,7 +8,7 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const { testConnection, getPoolMetrics, closePool } = require('./config/database');
-const { initializeSocket, getSocketMetrics } = require('./config/socket');
+const { initializeSocket, getSocketMetrics, stopInactivityCheck } = require('./config/socket');
 
 // Import routes
 const gradesRoutes = require('./routes/grades');
@@ -118,6 +118,8 @@ app.use(cors({
 // JSON body parser with size limit
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Text body parser for sendBeacon (browser close events)
+app.use(express.text({ type: 'text/plain', limit: '1kb' }));
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -245,8 +247,8 @@ app.get('/api/dashboard/stats', async (req, res) => {
     const bobineStats = await query(`
       SELECT 
         COUNT(*) as total,
-        COUNT(*) FILTER (WHERE statut = 'active') as active,
-        COUNT(*) FILTER (WHERE statut = 'épuisée') as used,
+        COUNT(*) FILTER (WHERE LOWER(statut) IN ('disponible', 'installée', 'active', 'en cours')) as active,
+        COUNT(*) FILTER (WHERE LOWER(statut) IN ('épuisée', 'terminée', 'used')) as used,
         COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE) as today
       FROM bobines
     `);
@@ -417,6 +419,9 @@ const gracefulShutdown = async (signal) => {
   isShuttingDown = true;
   
   console.log(`\n⚠️  Received ${signal}. Starting graceful shutdown...`);
+  
+  // Stop inactivity check interval
+  stopInactivityCheck();
   
   // Stop accepting new connections
   server.close(async () => {

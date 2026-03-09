@@ -311,6 +311,22 @@ export const reparationsAPI = {
     body: JSON.stringify(userInfo),
   }),
 
+  // Actions Futures
+  getActionsFutures: (actif = true) => fetchAPI(`/reparations/actions-futures?actif=${actif}`),
+  getAllActionsFutures: () => fetchAPI('/reparations/actions-futures?actif=all'),
+  createActionFuture: (data) => fetchAPI('/reparations/actions-futures', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  updateActionFuture: (id, data) => fetchAPI(`/reparations/actions-futures/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+  deleteActionFuture: (id, userInfo = {}) => fetchAPI(`/reparations/actions-futures/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify(userInfo),
+  }),
+
   // History
   getHistory: (tableName) => fetchAPI(`/reparations/history/${tableName}`),
   
